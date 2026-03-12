@@ -30,7 +30,10 @@ jobs:
         shell: cmd
 
       - name: 4. 调用 Inno Setup 打包成独立安装包
-        run: "C:\\Program Files (x86)\\Inno Setup 6\\iscc.exe" build.iss
+        # 这里改成了多行模式，完美解决语法冲突
+        run: |
+          "C:\Program Files (x86)\Inno Setup 6\iscc.exe" build.iss
+        shell: cmd
 
       - name: 5. 上传最终安装包供你下载
         uses: actions/upload-artifact@v4
