@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>科技感罗盘时钟 - 风吹转场</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            /* 深邃的径向渐变背景 */
+            background: radial-gradient(circle at center, #1a1b26 0%, #000000 100%);
+            overflow: hidden;
+            font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
+            user-select: none;
+            cursor: pointer;
+        }
+        canvas {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+
+<script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    let width, height, cx, cy;
+    let dpr = window.devicePixelRatio || 1;
+
+    // 状态与配置
+    let currentLayout = 'circle'; // circle 或 grid
+    let isTransitioning = false;
+    const themeColor = '#00f3ff'; // 霓虹青色
+
+    // 中文数字转换
+    const numToCn =["零", "一", "二", "三", "四", "五", "六", "七", "八", "九", "十"];
+    function getCnNum(num) {
+        if (num === 0) return "零";
+        if (num <= 10) return numToCn[num];
+        if (num < 20) return "十" + (num % 10 === 0 ? "" : numToCn[num % 10]);
+        let ten = Math.floor(num / 10);
+        let unit = num % 10;
+        return numToCn[ten] + "十" + (unit === 0 ? "" : numToCn[unit]);
+    }
+
+    // 时间数据结构 (精确控制前缀和后缀)
+    const timeData =[
+        { type: 'month', count: 12, suffix: '月', getVal: (d) => d.getMonth() + 1 },
+        { type: 'day', count: 31, suffix: '日', getVal: (d) => d.getDate() },
+        { type: 'week', count: 7, prefix: '星期', getVal: (d) => d.getDay() === 0 ? 7 : d.getDay(), 
+          custom: ['一', '二', '三', '四', '五', '六', '日'] },
+        { type: 'ampm', count: 2, custom: ['上午', '下午'], getVal: (d) => d.getHours() < 12 ? 1 : 2 },
+        { type: 'hour', count: 12, suffix: '点', getVal: (d) => { let h = d.getHours() % 12; return h === 0 ? 12 : h; } },
+        { type: 'minute', count: 60, suffix: '分', getVal: (d) => d.getMinutes(), startZero: true },
+        { type: 'second', count: 60, suffix: '秒', getVal: (d) => d.getSeconds(), startZero: true }
+    ];
+
+    let particles =[];
+
+    // 粒子类
+    class TextParticle {
+        constructor(text, categoryIndex, itemIndex, totalInCat) {
+            this.text = text;
+            this.catIdx = categoryIndex; 
+            this.itemIdx = itemIndex;    
+            this.total = totalInCat;     
+
+            // 物理位置
+            this.x = Math.random() * window.innerWidth;
+            this.y = Math.random() * window.innerHeight;
+            this.tx = this.x; 
+            this.ty = this.y; 
+            this.vx = 0;
+            this.vy = 0;
+            
+            // 角度与视觉属性
+            this.angle = Math.random() * Math.PI * 2;
+            this.tAngle = 0;
+            this.vAngle = 0; // 旋转速度(风吹时)
+            
+            this.isActive = false;
+            this.alpha = 0;
+            this.tAlpha = 0.2;
+        }
+
+        update() {
+            if (isTransitioning) {
+                // 1. 风吹散开物理表现
+                this.x += this.vx;
+                this.y += this.vy;
+                this.angle += this.vAngle;
+                
+                // 摩擦力与风力衰减
+                this.vx *= 0.95;
+                this.vy *= 0.95;
+                this.vAngle *= 0.95;
+                
+                // 风吹时变暗
+                this.alpha += (0 - this.alpha) * 0.1; 
+            } else {
+                // 2. 磁性吸附缓动 (Spring Easing)
+                this.x += (this.tx - this.x) * 0.08;
+                this.y += (this.ty - this.y) * 0.08;
+                
+                // 处理角度最短路径平滑旋转 (防止360度乱转)
+                let dAngle = this.tAngle - this.angle;
+                while (dAngle > Math.PI) dAngle -= Math.PI * 2;
+                while (dAngle < -Math.PI) dAngle += Math.PI * 2;
+                this.angle += dAngle * 0.08;
+
+                // 透明度渐变
+                this.tAlpha = this.isActive ? 1 : 0.2;
+                this.alpha += (this.tAlpha - this.alpha) * 0.1;
+            }
+        }
+
+        draw() {
+            if (this.alpha < 0.01) return; // 极致优化：全透明不渲染
+
+            ctx.save();
+            ctx.translate(this.x, this.y);
+            ctx.rotate(this.angle);
+
+            // 高亮与暗态样式区分
+            if (this.isActive && !isTransitioning) {
+                ctx.fillStyle = themeColor;
+                ctx.shadowColor = themeColor;
+                ctx.shadowBlur = 15; // 霓虹发光
+                ctx.font = 'bold 15px "PingFang SC", "Microsoft YaHei"';
+            } else {
+                ctx.fillStyle = `rgba(255, 255, 255, ${this.alpha})`;
+                ctx.shadowBlur = 0;
+                ctx.font = '300 13px "PingFang SC", "Microsoft YaHei"';
+            }
+
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(this.text, 0, 0);
+            ctx.restore();
+        }
+    }
+
+    // 初始化数据
+    function initParticles() {
+        particles =[];
+        timeData.forEach((cat, catIdx) => {
+            let start = cat.startZero ? 0 : 1;
+            let end = cat.startZero ? cat.count - 1 : cat.count;
+            for (let i = start; i <= end; i++) {
+                let text = "";
+                if (cat.custom) {
+                    text = (cat.prefix || '') + cat.custom[cat.startZero ? i : i - 1] + (cat.suffix || '');
+                } else {
+                    let numStr = cat.type === 'hour' && i === 2 ? '两' : getCnNum(i); // 处理"两点"
+                    text = (cat.prefix || '') + numStr + (cat.suffix || '');
+                }
+                particles.push(new TextParticle(text, catIdx, i, cat.count));
+            }
+        });
+    }
+
+    // 布局计算：罗盘模式
+    function updateCircleLayout(now) {
+        let activeIndices = timeData.map(cat => cat.getVal(now));
+        
+        // 核心参数：内圈半径、圈间距
+        let baseRadius = 50;
+        let ringSpacing = 55;
+
+        particles.forEach(p => {
+            let activeVal = activeIndices[p.catIdx];
+            p.isActive = (p.itemIdx === activeVal);
+
+            let radius = baseRadius + p.catIdx * ringSpacing; 
+            // 计算当前项与激活项的偏移量
+            let offsetIndex = p.itemIdx - activeVal;
+            // 映射为弧度 (水平向右为 0 度)
+            let theta = (offsetIndex / p.total) * Math.PI * 2;
+            
+            if (currentLayout === 'circle') {
+                p.tx = cx + Math.cos(theta) * radius;
+                p.ty = cy + Math.sin(theta) * radius;
+                
+                // 目标角度同步：文字始终保持与圆弧切线垂直(呈放射状)
+                // 若要文字正立显示，可设为0。这里保持罗盘放射感。
+                let targetAngle = theta;
+                // 更新最短角度
+                while (targetAngle - p.angle > Math.PI) targetAngle -= Math.PI * 2;
+                while (targetAngle - p.angle < -Math.PI) targetAngle += Math.PI * 2;
+                p.tAngle = targetAngle;
+            }
+        });
+    }
+
+    // 布局计算：自适应居中矩阵模式
+    function updateGridLayout(now) {
+        let activeIndices = timeData.map(cat => cat.getVal(now));
+        
+        // 网格参数
+        let spacingX = 70;
+        let spacingY = 35;
+        let maxCols = Math.floor(width * 0.85 / spacingX); 
+        let totalRows = Math.ceil(particles.length / maxCols);
+        
+        // 计算起点，使其绝对居中
+        let startX = cx - ((maxCols - 1) * spacingX) / 2;
+        let startY = cy - ((totalRows - 1) * spacingY) / 2;
+
+        particles.forEach((p, index) => {
+            p.isActive = (p.itemIdx === activeIndices[p.catIdx]);
+
+            if (currentLayout === 'grid') {
+                let col = index % maxCols;
+                let row = Math.floor(index / maxCols);
+                
+                p.tx = startX + col * spacingX;
+                p.ty = startY + row * spacingY;
+                
+                // 文字恢复水平放置
+                let targetAngle = 0;
+                while (targetAngle - p.angle > Math.PI) targetAngle -= Math.PI * 2;
+                while (targetAngle - p.angle < -Math.PI) targetAngle += Math.PI * 2;
+                p.tAngle = targetAngle;
+            }
+        });
+    }
+
+    // 绘制科技感中心瞄准器和参考线
+    function drawHUD() {
+        if (currentLayout !== 'circle' || isTransitioning) return;
+        
+        ctx.save();
+        ctx.strokeStyle = `rgba(0, 243, 255, 0.3)`;
+        ctx.lineWidth = 1;
+        
+        // 中心准星
+        ctx.beginPath();
+        ctx.arc(cx, cy, 5, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // 时间高亮指示线 (从中心向右扫过)
+        ctx.beginPath();
+        ctx.moveTo(cx + 10, cy);
+        let maxRadius = 50 + 6 * 55 + 30; // 最后一圈半径再外扩一点
+        ctx.lineTo(cx + maxRadius, cy);
+        
+        // 给线加一点发光渐变
+        let gradient = ctx.createLinearGradient(cx, cy, cx + maxRadius, cy);
+        gradient.addColorStop(0, 'rgba(0, 243, 255, 0.8)');
+        gradient.addColorStop(1, 'rgba(0, 243, 255, 0)');
+        ctx.strokeStyle = gradient;
+        ctx.stroke();
+
+        ctx.restore();
+    }
+
+    // 触发风吹飘散事件
+    function triggerTransition() {
+        if (isTransitioning) return;
+        isTransitioning = true;
+        
+        particles.forEach(p => {
+            // 风力模拟：向右上角/右下角猛烈吹散，并带旋转
+            let windForceX = Math.random() * 40 + 20; 
+            let windForceY = (Math.random() - 0.5) * 60;
+            
+            p.vx = windForceX;
+            p.vy = windForceY;
+            p.vAngle = (Math.random() - 0.5) * 1.5; // 翻滚吧，文字
+        });
+
+        // 切换布局
+        currentLayout = currentLayout === 'circle' ? 'grid' : 'circle';
+
+        // 1.2秒后风停止，开始聚拢
+        setTimeout(() => {
+            isTransitioning = false;
+        }, 1200);
+    }
+
+    // 响应屏幕尺寸与高分屏适配
+    function resize() {
+        width = window.innerWidth;
+        height = window.innerHeight;
+        
+        canvas.width = width * dpr;
+        canvas.height = height * dpr;
+        canvas.style.width = width + 'px';
+        canvas.style.height = height + 'px';
+        
+        ctx.scale(dpr, dpr);
+        
+        cx = width / 2;
+        cy = height / 2;
+    }
+
+    // 主渲染循环
+    function animate() {
+        // 使用带透明度的清屏，形成极弱的运动拖影效果 (Motion Blur)
+        ctx.fillStyle = 'rgba(10, 10, 15, 0.8)';
+        ctx.fillRect(0, 0, width, height);
+        
+        const now = new Date();
+        
+        // 计算目标坐标
+        if (currentLayout === 'circle') {
+            updateCircleLayout(now);
+        } else {
+            updateGridLayout(now);
+        }
+
+        // 绘制背景装饰器
+        drawHUD();
+
+        // 渲染粒子
+        particles.forEach(p => {
+            p.update();
+            p.draw();
+        });
+
+        requestAnimationFrame(animate);
+    }
+
+    // 绑定事件
+    window.addEventListener('resize', resize);
+    window.addEventListener('click', triggerTransition);
+    window.addEventListener('touchstart', triggerTransition);
+
+    // 启动
+    resize();
+    initParticles();
+    animate();
+
+</script>
+</body>
+</html>
