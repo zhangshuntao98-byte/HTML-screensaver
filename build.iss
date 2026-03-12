@@ -26,14 +26,15 @@ const
   SPIF_UPDATEINIFILE = 1;
   SPIF_SENDWININICHANGE = 2;
 
-function SystemParametersInfo(uiAction: UINT; uiParam: UINT; pvParam: PChar; fWinIni: UINT): BOOL;
-  external 'SystemParametersInfoA@user32.dll stdcall';
+// 修复点：将所有不兼容的 UINT 替换为标准的 Integer，将 PChar 替换为 Integer 并传入 0
+function SystemParametersInfo(uiAction: Integer; uiParam: Integer; pvParam: Integer; fWinIni: Integer): Boolean;
+  external 'SystemParametersInfoW@user32.dll stdcall';
 
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep = ssPostInstall then
   begin
-    SystemParametersInfo(SPI_SETSCREENSAVEACTIVE, 1, nil, SPIF_UPDATEINIFILE or SPIF_SENDWININICHANGE);
+    SystemParametersInfo(SPI_SETSCREENSAVEACTIVE, 1, 0, SPIF_UPDATEINIFILE or SPIF_SENDWININICHANGE);
     MsgBox('屏保安装成功！已自动生效。', mbInformation, MB_OK);
   end;
 end;
