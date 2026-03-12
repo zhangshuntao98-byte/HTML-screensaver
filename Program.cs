@@ -37,13 +37,15 @@ namespace MyScreensaver
             this.FormBorderStyle = FormBorderStyle.None;
             this.WindowState = FormWindowState.Maximized;
             this.TopMost = true;
-            this.Cursor = Cursors.Hide;
+            
+            // 修复点1：隐藏鼠标指针的正确写法（调用方法而不是赋值）
+            Cursor.Hide(); 
 
             webView = new WebView2 { Dock = DockStyle.Fill };
             this.Controls.Add(webView);
 
             this.Load += async (s, e) => {
-                // 🚀 核心魔法：允许视频带有声音自动播放！
+                // 允许视频带有声音自动播放
                 var options = new CoreWebView2EnvironmentOptions("--autoplay-policy=no-user-gesture-required");
                 var env = await CoreWebView2Environment.CreateAsync(null, null, options);
                 await webView.EnsureCoreWebView2Async(env);
@@ -70,7 +72,8 @@ namespace MyScreensaver
                 await webView.CoreWebView2.ExecuteScriptAsync(js);
 
                 webView.CoreWebView2.WebMessageReceived += (sender, args) => {
-                    if (args.TryGetAsString() == "exit") Application.Exit();
+                    // 修复点2：WebView2 获取字符串的正确方法名是 TryGetWebMessageAsString
+                    if (args.TryGetWebMessageAsString() == "exit") Application.Exit();
                 };
             };
         }
