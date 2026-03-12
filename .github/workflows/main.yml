@@ -1,0 +1,39 @@
+name: Build Screensaver
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: 1. 编译 C# 源码
+        run: dotnet publish MyScreensaver.csproj -c Release -r win-x64 --self-contained false -o publish
+
+      - name: 2. 把生成的 exe 改名为 scr 屏保文件
+        run: ren publish\MyScreensaver.exe MyScreensaver.scr
+        shell: cmd
+
+      - name: 3. 把 HTML 和视频文件塞进发布文件夹
+        run: |
+          copy index.html publish\
+          if exist "*.mp4" copy *.mp4 publish\
+          if exist "*.css" copy *.css publish\
+          if exist "*.js" copy *.js publish\
+        shell: cmd
+
+      - name: 4. 调用 Inno Setup 打包成独立安装包
+        run: "C:\\Program Files (x86)\\Inno Setup 6\\iscc.exe" build.iss
+
+      - name: 5. 上传最终安装包供你下载
+        uses: actions/upload-artifact@v4
+        with:
+          name: Screensaver_Installer
+          path: Output/Install_Screensaver.exe
