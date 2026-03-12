@@ -15,7 +15,8 @@ jobs:
           dotnet-version: '8.0.x'
 
       - name: 1. 编译 C# 源码
-        run: dotnet publish MyScreensaver.csproj -c Release -r win-x64 --self-contained false -o publish
+        # 这里改动了：--self-contained true，这样它会把 .NET 库打包进去
+        run: dotnet publish MyScreensaver.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o publish
 
       - name: 2. 把生成的 exe 改名为 scr 屏保文件
         run: ren publish\MyScreensaver.exe MyScreensaver.scr
